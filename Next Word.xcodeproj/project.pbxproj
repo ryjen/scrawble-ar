@@ -8,13 +8,14 @@
 
 /* Begin PBXBuildFile section */
 		94160A871F8183570048325D /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94160A861F8183570048325D /* AppDelegate.swift */; };
-		94160A891F8183570048325D /* art.scnassets in Resources */ = {isa = PBXBuildFile; fileRef = 94160A881F8183570048325D /* art.scnassets */; };
 		94160A8B1F8183570048325D /* ViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94160A8A1F8183570048325D /* ViewController.swift */; };
 		94160A8E1F8183570048325D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 94160A8C1F8183570048325D /* Main.storyboard */; };
 		94160A901F8183570048325D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 94160A8F1F8183570048325D /* Assets.xcassets */; };
 		94160A931F8183570048325D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 94160A911F8183570048325D /* LaunchScreen.storyboard */; };
 		94160A9E1F8183570048325D /* Next_WordTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94160A9D1F8183570048325D /* Next_WordTests.swift */; };
 		94160AA91F8183570048325D /* Next_WordUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94160AA81F8183570048325D /* Next_WordUITests.swift */; };
+		94160AB71F8187440048325D /* Inceptionv3.mlmodel in Sources */ = {isa = PBXBuildFile; fileRef = 94160AB61F81837B0048325D /* Inceptionv3.mlmodel */; };
+		94160ABD1F81A1A60048325D /* ImageViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 94160ABC1F81A1A60048325D /* ImageViewController.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -37,7 +38,6 @@
 /* Begin PBXFileReference section */
 		94160A831F8183570048325D /* Next Word.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Next Word.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		94160A861F8183570048325D /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
-		94160A881F8183570048325D /* art.scnassets */ = {isa = PBXFileReference; lastKnownFileType = wrapper.scnassets; path = art.scnassets; sourceTree = "<group>"; };
 		94160A8A1F8183570048325D /* ViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ViewController.swift; sourceTree = "<group>"; };
 		94160A8D1F8183570048325D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/Main.storyboard; sourceTree = "<group>"; };
 		94160A8F1F8183570048325D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -49,6 +49,8 @@
 		94160AA41F8183570048325D /* Next WordUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Next WordUITests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		94160AA81F8183570048325D /* Next_WordUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Next_WordUITests.swift; sourceTree = "<group>"; };
 		94160AAA1F8183570048325D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		94160AB61F81837B0048325D /* Inceptionv3.mlmodel */ = {isa = PBXFileReference; lastKnownFileType = file.mlmodel; path = Inceptionv3.mlmodel; sourceTree = "<group>"; };
+		94160ABC1F81A1A60048325D /* ImageViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageViewController.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -99,13 +101,14 @@
 		94160A851F8183570048325D /* Next Word */ = {
 			isa = PBXGroup;
 			children = (
+				94160AB61F81837B0048325D /* Inceptionv3.mlmodel */,
 				94160A861F8183570048325D /* AppDelegate.swift */,
-				94160A881F8183570048325D /* art.scnassets */,
 				94160A8A1F8183570048325D /* ViewController.swift */,
 				94160A8C1F8183570048325D /* Main.storyboard */,
 				94160A8F1F8183570048325D /* Assets.xcassets */,
 				94160A911F8183570048325D /* LaunchScreen.storyboard */,
 				94160A941F8183570048325D /* Info.plist */,
+				94160ABC1F81A1A60048325D /* ImageViewController.swift */,
 			);
 			path = "Next Word";
 			sourceTree = "<group>";
@@ -235,7 +238,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				94160A891F8183570048325D /* art.scnassets in Resources */,
 				94160A931F8183570048325D /* LaunchScreen.storyboard in Resources */,
 				94160A901F8183570048325D /* Assets.xcassets in Resources */,
 				94160A8E1F8183570048325D /* Main.storyboard in Resources */,
@@ -263,6 +265,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				94160ABD1F81A1A60048325D /* ImageViewController.swift in Sources */,
+				94160AB71F8187440048325D /* Inceptionv3.mlmodel in Sources */,
 				94160A8B1F8183570048325D /* ViewController.swift in Sources */,
 				94160A871F8183570048325D /* AppDelegate.swift in Sources */,
 			);
@@ -434,7 +438,7 @@
 				DEVELOPMENT_TEAM = V76V3823EW;
 				INFOPLIST_FILE = "Next Word/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.micrantha.Next-Word";
+				PRODUCT_BUNDLE_IDENTIFIER = com.micrantha.nextword;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 4.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -449,7 +453,7 @@
 				DEVELOPMENT_TEAM = V76V3823EW;
 				INFOPLIST_FILE = "Next Word/Info.plist";
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.micrantha.Next-Word";
+				PRODUCT_BUNDLE_IDENTIFIER = com.micrantha.nextword;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 4.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
