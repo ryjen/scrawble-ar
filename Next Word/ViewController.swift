@@ -59,10 +59,10 @@ internal class GridNode: SKSpriteNode {
         return SKTexture(image: image!)
     }
     
-    func gridPosition(row:Int, col:Int) -> CGPoint {
+    func point(row:Int, col:Int) -> CGPoint {
         let offset = blockSize / 2.0 + 0.5
-        let x = CGFloat(col) * blockSize - (blockSize * CGFloat(cols)) / 2.0 + offset
-        let y = CGFloat(rows - row - 1) * blockSize - (blockSize * CGFloat(rows)) / 2.0 + offset
+        let x = max(0, CGFloat(col) * blockSize - (blockSize * CGFloat(cols)) / 2.0) + offset
+        let y = max(0, CGFloat(rows - row - 1) * blockSize - (blockSize * CGFloat(rows)) / 2.0) + offset
         return CGPoint(x:x, y:y)
     }
 }
@@ -98,7 +98,24 @@ internal class OverlayScene : SKScene {
     required init?(coder aDecoder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+    
+    var boundingBox: CGRect {
+        get {
+            let point = grid.point(row: 0, col: 0)
+            return CGRect(origin: point, size: self.grid.size)
+        }
+    }
+    
+    func pointInGrid(point: CGPoint) -> Bool {
+        return grid.frame.contains(point)
+    }
+    
+    func parse(rect: CGRect) -> Bool {
+        
+        return false
+    }
 }
+
 class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
 
     @IBOutlet weak var sessionInfoView: UIView!
@@ -107,8 +124,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
     
     fileprivate let inceptionv3model = Inceptionv3()
     fileprivate var planes: [String : SCNNode] = [:]
-    fileprivate var requests = [VNRequest]()
     fileprivate var capturedImage: CGImage?
+    fileprivate var previewImage: CGImage?
+    fileprivate var previewRect: CGRect?
+    fileprivate var capturedAnchors: [ARPlaneAnchor]?
+    fileprivate var capturedFrame: ARFrame?
+    fileprivate var sequenceRequestHandler: VNSequenceRequestHandler?
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -121,14 +142,14 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         self.sceneView.debugOptions = [ARSCNDebugOptions.showFeaturePoints]
         
         self.sceneView.overlaySKScene = OverlayScene(size: self.view.frame.size)
+        
+        self.sequenceRequestHandler = VNSequenceRequestHandler()
     }
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         
-        setupAR();
-        
-        setupVision()
+        setupAR()
     }
     
     override func viewWillDisappear(_ animated: Bool) {
@@ -160,6 +181,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         let planeNode = SCNNode(geometry: plane)
         planeNode.simdPosition = float3(planeAnchor.center.x, 0, planeAnchor.center.z)
         
+        
         /*
          `SCNPlane` is vertically oriented in its local coordinate space, so
          rotate the plane to match the horizontal orientation of `ARPlaneAnchor`.
@@ -167,13 +189,14 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         planeNode.eulerAngles.x = -.pi / 2
         
         // Make the plane visualization semitransparent to clearly show real-world placement.
-        planeNode.opacity = 0.0
+        planeNode.opacity = 0.1
         
         /*
          Add the plane visualization to the ARKit-managed node so that it tracks
          changes in the plane anchor as plane estimation continues.
          */
         node.addChildNode(planeNode)
+    
     }
     
     func renderer(_ renderer: SCNSceneRenderer, didUpdate node: SCNNode, for anchor: ARAnchor) {
@@ -208,13 +231,20 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
     
     func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
         guard let frame = session.currentFrame else { return }
+        
         updateSessionInfoLabel(for: frame, trackingState: frame.camera.trackingState)
-        identifyFrame(frame: frame)
+        
+        self.capturedFrame = frame
+        self.capturedAnchors = anchors.flatMap({ $0 as? ARPlaneAnchor })
+        
+        identifyBoard()
     }
     func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
         guard let frame = session.currentFrame else { return }
+        
         updateSessionInfoLabel(for: frame, trackingState: frame.camera.trackingState)
-        identifyFrame(frame: frame)
+        
+        resetCapture()
     }
     
     func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
@@ -226,7 +256,7 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
     func session(_ session: ARSession, didFailWithError error: Error) {
         // Present an error message to the user.
         updateSessionInfoLabel(for: "Session failed: \(error.localizedDescription)")
-        resetTracking()
+        setupAR()
     }
     
     func sessionWasInterrupted(_ session: ARSession) {
@@ -238,13 +268,12 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
     func sessionInterruptionEnded(_ session: ARSession) {
         // Reset tracking and/or remove existing anchors if consistent tracking is required.
         updateSessionInfoLabel(for: "Session interruption ended")
-        resetTracking()
+        setupAR()
     }
     
     // MARK: - Private methods
     
     private func updateOverlay() {
-        
         self.sceneView.overlaySKScene = OverlayScene(size: CGSize(width: self.sceneView.frame.size.height, height: self.sceneView.frame.size.width))
     }
     private func updateSessionInfoLabel(for frame: ARFrame, trackingState: ARCamera.TrackingState) {
@@ -282,12 +311,6 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         sessionInfoView.isHidden = message.isEmpty
     }
     
-    private func resetTracking() {
-        let configuration = ARWorldTrackingConfiguration()
-        configuration.planeDetection = .horizontal
-        sceneView.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
-    }
-
     private func setupAR() {
         
         guard ARWorldTrackingConfiguration.isSupported else {
@@ -301,59 +324,79 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
                 determine whether to show UI for launching AR experiences.
             """) // For details, see https://developer.apple.com/documentation/arkit
         }
+        resetCapture()
         
-        // Create a session configuration
         let configuration = ARWorldTrackingConfiguration()
         configuration.planeDetection = .horizontal
-        // Run the view's session
+        configuration.worldAlignment = .camera
         sceneView.session.delegate = self;
-        sceneView.session.run(configuration)
+        sceneView.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
     }
+    
     override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
         if segue.identifier == "ShowImage" {
             
-            if (self.capturedImage == nil) {
+            if (self.previewImage == nil) {
                 return
             }
             
             guard let dest = segue.destination as? ImageViewController
                 else { return }
             
-            dest.image = capturedImage!
+            dest.image = self.previewImage!
+            dest.overlay = self.previewRect!
         }
     }
-    private func setupVision() {
-        guard let visionModel = try? VNCoreMLModel(for: inceptionv3model.model) else {
-            fatalError("can't load Vision ML model")
+    
+    lazy var findBoardRequest: VNCoreMLRequest = {
+        // Load the ML model through its generated class and create a Vision request for it.
+        do {
+            let model = try VNCoreMLModel(for: Inceptionv3().model)
+            let request = VNCoreMLRequest(model: model, completionHandler: self.handleFindBoard)
+            request.imageCropAndScaleOption = VNImageCropAndScaleOption.centerCrop
+            return request
+        } catch {
+            fatalError("can't load Vision ML model: \(error)")
         }
-        let classificationRequest = VNCoreMLRequest(model: visionModel) { (request: VNRequest, error: Error?) in
-            guard let observations = request.results else {
-                print("no results:\(error!)")
-                return
-            }
-            
-            
-            let classifications = observations[0...4]
-                .flatMap({ $0 as? VNClassificationObservation })
-                .filter({ $0.confidence > 0.2 })
-            
-            let message = classifications
-                .map({ "\($0.identifier) \($0.confidence)" }).joined(separator: "\n")
-            
-            let show = self.isScrabble(classifications: classifications)
-            
-            DispatchQueue.main.async {
-                self.updateSessionInfoLabel(for: message)
-                
-                if (show) {
-                    self.performSegue(withIdentifier: "ShowImage", sender: self)
-                }
-            }
+    }()
+    
+    private func handleFindBoard(request: VNRequest, error: Error?) {
+        guard let observations = request.results else {
+            print("no results:\(error!)")
+            return
+        }
+    
+        let classifications = observations[0...4]
+            .flatMap({ $0 as? VNClassificationObservation })
+            .filter({ $0.confidence > 0.2 })
+        
+        let message = classifications
+            .map({ "\($0.identifier) \($0.confidence)" }).joined(separator: "\n")
+        
+        DispatchQueue.main.async {
+            self.updateSessionInfoLabel(for: message)
         }
         
-        classificationRequest.imageCropAndScaleOption = VNImageCropAndScaleOption.centerCrop
+        if (self.isScrabble(classifications: classifications)) {
+            self.parseScrabbleBoard()
+        }
+    }
+    
+    private func parseScrabbleBoard() {
         
-        self.requests = [classificationRequest]
+        // TODO: break down rectangles
+        
+        do {
+            var requests: [VNDetectRectanglesRequest] = []
+            let subRects = self.capturedImage!.extent.split()
+            for rect in subRects {
+                requests.append(self.findSquaresRequest(subRect: rect))
+            }
+            try sequenceRequestHandler!.perform(requests, on: self.capturedImage!)
+        } catch {
+            print(error)
+        }
+    
     }
     
     private func isScrabble(classifications: Array<VNClassificationObservation>) -> Bool {
@@ -363,34 +406,40 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         return classifications.first!.identifier.contains("crossword")
     }
     
-    private func identifyFrame(frame: ARFrame) {
+    private func resetCapture() {
+        self.capturedFrame = nil
+        self.capturedAnchors = nil
+        self.capturedImage = nil
+    }
+    
+    private func resetAnchors() {
+        for anchor in self.capturedFrame!.anchors {
+            self.sceneView.session.remove(anchor: anchor)
+        }
+    }
+    
+    private func identifyBoard() {
+        guard let frame = self.capturedFrame else { return }
+        
         var requestOptions:[VNImageOption : Any] = [:]
         
         let pixelBuffer = frame.capturedImage;
-        
-        self.capturedImage = imageFromPixelBuffer(buffer: pixelBuffer)
         
         if let cameraIntrinsicData = CMGetAttachment(pixelBuffer, kCMSampleBufferAttachmentKey_CameraIntrinsicMatrix, nil) {
             requestOptions = [.cameraIntrinsics:cameraIntrinsicData]
         }
         
+        let hud = self.overlay!.boundingBox.scaleAndCrop(to: pixelBuffer.extent, fit: true)
+
+        self.capturedImage = pixelBuffer.toCGImage(in: hud, orientation: UIImageOrientation.left)
+        
         let imageRequestHandler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: CGImagePropertyOrientation(rawValue: UInt32(self.exifOrientationFromDeviceOrientation))!, options: requestOptions)
         do {
-            try imageRequestHandler.perform(self.requests)
+            try imageRequestHandler.perform([self.findBoardRequest])
         } catch {
             print(error)
         }
     }
-    private func imageFromPixelBuffer(buffer: CVPixelBuffer) -> CGImage? {
-        let ciimage = CIImage(cvPixelBuffer: buffer)
-        
-        let context = CIContext(options: nil)
-        
-        let cgimage = context.createCGImage(ciimage, from: CGRect(x: 0, y: 0, width: CVPixelBufferGetWidth(buffer), height: CVPixelBufferGetHeight(buffer)))
-        
-        return cgimage
-    }
-
     
     /// only support back camera
     private var exifOrientationFromDeviceOrientation: Int32 {
@@ -416,6 +465,48 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
             exifOrientation = .right0ColTop
         }
         return exifOrientation.rawValue
+    }
+    
+    func findSquaresRequest(subRect: CGRect) -> VNDetectRectanglesRequest {
+        let request = VNDetectRectanglesRequest(completionHandler: self.handleFindSquares)
+        request.regionOfInterest = subRect
+        return request
+    }
+    
+    lazy var overlay: OverlayScene? = {
+        return self.sceneView.overlaySKScene as? OverlayScene
+    }()
+    
+    private func handleFindSquares(request: VNRequest, error: Error?) {
+        
+        guard let imageRequest = request as? VNImageBasedRequest else {
+            fatalError("request is not an image request")
+        }
+        
+        guard let observations = request.results as? [VNRectangleObservation]
+            else { fatalError("unexpected result type from VNDetectRectanglesRequest") }
+
+        print(imageRequest.regionOfInterest)
+        
+        for (i, rect) in observations.enumerated() {
+            
+            let frame = rect.boundingBox.scaled(to: self.capturedImage!.extent.size)
+           
+            print("\(i): \(frame)")
+            
+            if (overlay!.parse(rect: frame)) {
+                return
+            }
+            
+            
+            self.previewImage = self.capturedImage?.cropping(to: imageRequest.regionOfInterest)
+            self.previewRect = frame
+            
+            self.performSegue(withIdentifier: "ShowImage", sender: self)
+            
+            return
+        }
+
     }
 }
 

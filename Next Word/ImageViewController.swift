@@ -14,12 +14,23 @@ class ImageViewController : UIViewController {
     @IBOutlet weak var button: UIButton!
     
     var image: CGImage?
+    var overlay: CGRect?
     
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         
         if (self.image != nil) {
             imageView.image = UIImage(cgImage: image!)
+        }
+        
+        if (self.overlay != nil) {
+            let layer = CALayer()
+            
+            layer.bounds = self.overlay!
+            layer.borderColor = UIColor.cyan.cgColor
+            layer.borderWidth = 2
+            
+            self.imageView.layer.addSublayer(layer)
         }
     }
     
