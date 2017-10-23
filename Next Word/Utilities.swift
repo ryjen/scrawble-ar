@@ -9,6 +9,7 @@ import UIKit
 import CoreGraphics
 import CoreMedia
 import ImageIO
+import ARKit
 
 extension CGPoint {
     func scaled(byFactor: CGFloat) -> CGPoint {
@@ -148,13 +149,52 @@ extension CVPixelBuffer {
     
     func toCGImage(in rect: CGRect, orientation: UIImageOrientation) -> CGImage? {
 
+        let cgimage = toCGImage(for: orientation)
+        
+        return cgimage?.cropping(to: rect)
+    }
+    
+    
+    func toCGImage(for orientation: UIImageOrientation) -> CGImage? {
+        
         let cgimage = toCGImage()
         
-        return cgimage?.createMatchingBackingDataWithImage(orienation: orientation)?.cropping(to: rect)
+        return cgimage?.createMatchingBackingDataWithImage(orienation: orientation)
     }
 }
 
-extension CGRect {
+extension ARFrame {
+    
+    func viewToImageCoordinates(rect: CGRect, size: CGSize, orientation: UIInterfaceOrientation) -> CGRect {
+        
+        let t = CGAffineTransform(scaleX: 1.0 / rect.size.width, y: 1.0 / rect.size.height)
+        let normalizedTrackImageBoundingBox = rect.applying(t)
+        
+        // Transfrom the rect from view space to image space
+        let fromViewToCameraImageTransform = self.displayTransform(for: orientation, viewportSize: size).inverted()
+        var trackImageBoundingBoxInImage =  normalizedTrackImageBoundingBox.applying(fromViewToCameraImageTransform)
+        trackImageBoundingBoxInImage.origin.y = 1 - trackImageBoundingBoxInImage.origin.y   // Image space uses bottom left as origin while view space uses top left
+        return trackImageBoundingBoxInImage
+    }
+    
+    func imageToViewCoordinates(boundingBox: CGRect, size: CGSize, orientation: UIInterfaceOrientation) -> CGRect {
+        
+        var viewBoundingBox = boundingBox
+        // Transfrom the rect from image space to view space
+        viewBoundingBox.origin.y = 1 - viewBoundingBox.origin.y
+        let fromCameraImageToViewTransform = self.displayTransform(for: orientation, viewportSize: size)
+        let normalizedTrackImageBoundingBox = viewBoundingBox.applying(fromCameraImageToViewTransform)
+        let t = CGAffineTransform(scaleX: size.width, y: size.height)
+        let unnormalizedTrackImageBoundingBox = normalizedTrackImageBoundingBox.applying(t)
+        return unnormalizedTrackImageBoundingBox
+    }
+    
+}
+
+extension CGRect: Hashable {
+    public var hashValue: Int {
+        return NSStringFromCGRect(self).hashValue
+    }
     
     func split() -> [CGRect] {
         var subs: [CGRect] = []
@@ -180,7 +220,6 @@ extension CGRect {
         
         return subs;
     }
-    
     
     func scaleAndCrop(to size: CGSize, fit: Bool = true) -> CGRect {
         

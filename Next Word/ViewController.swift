@@ -11,6 +11,8 @@ import SceneKit
 import ARKit
 import Vision
 
+let NUM_TILES = 15
+
 internal class GridNode: SKSpriteNode {
     var rows:Int!
     var cols:Int!
@@ -121,15 +123,14 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
     @IBOutlet weak var sessionInfoView: UIView!
     @IBOutlet weak var sessionInfoLabel: UILabel!
     @IBOutlet var sceneView: ARSCNView!
+    @IBOutlet weak var previewImageView: UIImageView!
     
     fileprivate let inceptionv3model = Inceptionv3()
-    fileprivate var planes: [String : SCNNode] = [:]
-    fileprivate var capturedImage: CGImage?
-    fileprivate var previewImage: CGImage?
-    fileprivate var previewRect: CGRect?
-    fileprivate var capturedAnchors: [ARPlaneAnchor]?
-    fileprivate var capturedFrame: ARFrame?
+    fileprivate var squares: [CGRect] = []
+    fileprivate var tiles: [CGRect: VNRectangleObservation] = [:]
+    fileprivate var previewImage: CVPixelBuffer?
     fileprivate var sequenceRequestHandler: VNSequenceRequestHandler?
+    fileprivate var capturedAnchors: [ARPlaneAnchor: SCNNode] = [:]
     
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -139,10 +140,9 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         self.sceneView.showsStatistics = true
         self.sceneView.antialiasingMode = .multisampling4X
         self.sceneView.autoenablesDefaultLighting = true
-        self.sceneView.debugOptions = [ARSCNDebugOptions.showFeaturePoints]
+        self.sceneView.debugOptions = [ARSCNDebugOptions.showFeaturePoints, ARSCNDebugOptions.showWorldOrigin]
         
-        self.sceneView.overlaySKScene = OverlayScene(size: self.view.frame.size)
-        
+//        self.sceneView.overlaySKScene = OverlayScene(size: self.view.frame.size)
         self.sequenceRequestHandler = VNSequenceRequestHandler()
     }
     
@@ -181,6 +181,10 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         let planeNode = SCNNode(geometry: plane)
         planeNode.simdPosition = float3(planeAnchor.center.x, 0, planeAnchor.center.z)
         
+        let greenMaterial = SCNMaterial()
+        greenMaterial.diffuse.contents = UIColor.green
+        greenMaterial.transparency = 0.5
+        plane.materials = [greenMaterial]
         
         /*
          `SCNPlane` is vertically oriented in its local coordinate space, so
@@ -188,15 +192,18 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
          */
         planeNode.eulerAngles.x = -.pi / 2
         
-        // Make the plane visualization semitransparent to clearly show real-world placement.
-        planeNode.opacity = 0.1
         
         /*
          Add the plane visualization to the ARKit-managed node so that it tracks
          changes in the plane anchor as plane estimation continues.
          */
         node.addChildNode(planeNode)
-    
+        
+        print("Added node for: \(planeAnchor.identifier)")
+        
+        self.capturedAnchors[planeAnchor] = node
+        
+        identifyBoard()
     }
     
     func renderer(_ renderer: SCNSceneRenderer, didUpdate node: SCNNode, for anchor: ARAnchor) {
@@ -217,38 +224,40 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         plane.width = CGFloat(planeAnchor.extent.x)
         plane.height = CGFloat(planeAnchor.extent.z)
         
-        // TODO: compare plane with overlay
+        print("Updated node for: \(planeAnchor.identifier)")
+        
+        self.capturedAnchors[planeAnchor] = node
+        
+        
+        identifyBoard()
     }
     
     func renderer(_ renderer: SCNSceneRenderer, didRemove node: SCNNode, for anchor: ARAnchor) {
-        guard let planeNode = node.childNodes.first
+        guard let planeAnchor = anchor as?  ARPlaneAnchor, let planeNode = node.childNodes.first
             else { return }
         
         planeNode.removeFromParentNode()
+        
+        print("Removed node for: \(planeAnchor.identifier)")
+        
+        self.capturedAnchors.removeValue(forKey: planeAnchor)
     }
     
     // MARK: - ARSessionDelegate
     
     func session(_ session: ARSession, didAdd anchors: [ARAnchor]) {
-        guard let frame = session.currentFrame else { return }
         
-        updateSessionInfoLabel(for: frame, trackingState: frame.camera.trackingState)
-        
-        self.capturedFrame = frame
-        self.capturedAnchors = anchors.flatMap({ $0 as? ARPlaneAnchor })
-        
-        identifyBoard()
+        updateSessionInfoLabel()
+
     }
+    
     func session(_ session: ARSession, didRemove anchors: [ARAnchor]) {
-        guard let frame = session.currentFrame else { return }
-        
-        updateSessionInfoLabel(for: frame, trackingState: frame.camera.trackingState)
-        
-        resetCapture()
+
+        updateSessionInfoLabel()
     }
     
     func session(_ session: ARSession, cameraDidChangeTrackingState camera: ARCamera) {
-        updateSessionInfoLabel(for: session.currentFrame!, trackingState: camera.trackingState)
+        updateSessionInfoLabel()
     }
     
     // MARK: - ARSessionObserver
@@ -274,13 +283,13 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
     // MARK: - Private methods
     
     private func updateOverlay() {
-        self.sceneView.overlaySKScene = OverlayScene(size: CGSize(width: self.sceneView.frame.size.height, height: self.sceneView.frame.size.width))
+//        self.sceneView.overlaySKScene = OverlayScene(size: CGSize(width: self.sceneView.frame.size.height, height: self.sceneView.frame.size.width))
     }
-    private func updateSessionInfoLabel(for frame: ARFrame, trackingState: ARCamera.TrackingState) {
+    private func updateSessionInfoLabel() {
         // Update the UI to provide feedback on the state of the AR experience.
         let message: String
-        
-        switch trackingState {
+        guard let frame = self.capturedFrame else { return }
+        switch frame.camera.trackingState {
         case .normal where frame.anchors.isEmpty:
             // No planes detected; provide instructions for this app's AR interactions.
             message = "Move the device around to detect horizontal surfaces."
@@ -324,28 +333,21 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
                 determine whether to show UI for launching AR experiences.
             """) // For details, see https://developer.apple.com/documentation/arkit
         }
-        resetCapture()
+        
+        self.squares.removeAll()
+        self.tiles.removeAll()
+        self.capturedAnchors.removeAll()
+        self.previewImage = nil
+        
+        DispatchQueue.main.async {
+            self.previewImageView.isHidden = true
+        }
         
         let configuration = ARWorldTrackingConfiguration()
         configuration.planeDetection = .horizontal
-        configuration.worldAlignment = .camera
         sceneView.session.delegate = self;
+        print("Setting up AR");
         sceneView.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
-    }
-    
-    override func prepare(for segue: UIStoryboardSegue, sender: Any?) {
-        if segue.identifier == "ShowImage" {
-            
-            if (self.previewImage == nil) {
-                return
-            }
-            
-            guard let dest = segue.destination as? ImageViewController
-                else { return }
-            
-            dest.image = self.previewImage!
-            dest.overlay = self.previewRect!
-        }
     }
     
     lazy var findBoardRequest: VNCoreMLRequest = {
@@ -356,13 +358,13 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
             request.imageCropAndScaleOption = VNImageCropAndScaleOption.centerCrop
             return request
         } catch {
-            fatalError("can't load Vision ML model: \(error)")
+            fatalError("Can't load Vision ML model: \(error)")
         }
     }()
     
     private func handleFindBoard(request: VNRequest, error: Error?) {
         guard let observations = request.results else {
-            print("no results:\(error!)")
+            print("Find scrabble board: no results:\(error!)")
             return
         }
     
@@ -379,20 +381,55 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         
         if (self.isScrabble(classifications: classifications)) {
             self.parseScrabbleBoard()
+        } else {
+            print("Did not find scrabble board: \(message)")
         }
+    }
+    
+    private func generateTileRegions() -> [CGRect] {
+        
+        var values: [CGRect] = []
+        let anchor = self.capturedAnchors.first?.key
+
+        let w = CGFloat(anchor!.extent.x)
+        let h = CGFloat(anchor!.extent.z)
+
+        for i in 1...NUM_TILES {
+            let xpos = w / CGFloat(i)
+            for j in 1...NUM_TILES {
+                let ypos = h / CGFloat(j)
+                values.append(CGRect(x: xpos, y: ypos, width: w, height: h))
+            }
+        }
+        
+        
+//        let pointCloud = self.capturedFrame!.rawFeaturePoints
+//        let points = pointCloud!.points
+//
+//        for point in points {
+//
+//            
+//        }
+        
+        return values
     }
     
     private func parseScrabbleBoard() {
         
-        // TODO: break down rectangles
+        DispatchQueue.main.async {
+            self.setPreviewImage(image: self.capturedFrame?.capturedImage.toCGImage(for: UIImageOrientation.left))
+        }
         
+        self.previewImage = self.capturedFrame!.capturedImage
+        
+        self.squares = generateTileRegions()
+        
+        let rect = squares.last
+        
+         print("Finding squares in scrabble board")
+    
         do {
-            var requests: [VNDetectRectanglesRequest] = []
-            let subRects = self.capturedImage!.extent.split()
-            for rect in subRects {
-                requests.append(self.findSquaresRequest(subRect: rect))
-            }
-            try sequenceRequestHandler!.perform(requests, on: self.capturedImage!)
+            try sequenceRequestHandler!.perform([self.findSquaresRequest(subRect: rect!)], on: self.previewImage!)
         } catch {
             print(error)
         }
@@ -406,36 +443,63 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         return classifications.first!.identifier.contains("crossword")
     }
     
-    private func resetCapture() {
-        self.capturedFrame = nil
-        self.capturedAnchors = nil
-        self.capturedImage = nil
+    private var capturedFrame: ARFrame? {
+        get {
+            return self.sceneView?.session.currentFrame
+        }
     }
     
+//    private var capturedImage: CVPixelBuffer? {
+//        get {
+//            return self.capturedFrame?.capturedImage
+//        }
+//    }
     private func resetAnchors() {
-        for anchor in self.capturedFrame!.anchors {
-            self.sceneView.session.remove(anchor: anchor)
-        }
+        self.capturedAnchors.removeAll()
+//        for anchor in self.capturedFrame!.anchors {
+//            self.sceneView.session.remove(anchor: anchor)
+//        }
+    }
+    
+    private func setPreviewImage(image: CGImage?) {
+        self.previewImageView.image = UIImage(cgImage: image!)
+        self.previewImageView.isHidden = false
     }
     
     private func identifyBoard() {
-        guard let frame = self.capturedFrame else { return }
         
-        var requestOptions:[VNImageOption : Any] = [:]
+//        var requestOptions:[VNImageOption : Any] = [:]
         
-        let pixelBuffer = frame.capturedImage;
         
-        if let cameraIntrinsicData = CMGetAttachment(pixelBuffer, kCMSampleBufferAttachmentKey_CameraIntrinsicMatrix, nil) {
-            requestOptions = [.cameraIntrinsics:cameraIntrinsicData]
-        }
+//        if let cameraIntrinsicData = CMGetAttachment(pixelBuffer, kCMSampleBufferAttachmentKey_CameraIntrinsicMatrix, nil) {
+//            requestOptions = [.cameraIntrinsics:cameraIntrinsicData]
+//        }
         
-        let hud = self.overlay!.boundingBox.scaleAndCrop(to: pixelBuffer.extent, fit: true)
+        //let hud = self.overlay!.boundingBox.scaleAndCrop(to: pixelBuffer.extent, fit: true)
 
-        self.capturedImage = pixelBuffer.toCGImage(in: hud, orientation: UIImageOrientation.left)
-        
-        let imageRequestHandler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: CGImagePropertyOrientation(rawValue: UInt32(self.exifOrientationFromDeviceOrientation))!, options: requestOptions)
+        //self.capturedImage = pixelBuffer.toCGImage(rect: hude, for: UIImageOrientation.left)
+//
+//        let imageRequestHandler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: CGImagePropertyOrientation(rawValue: UInt32(self.exifOrientationFromDeviceOrientation))!, options: requestOptions)
         do {
-            try imageRequestHandler.perform([self.findBoardRequest])
+            
+            if self.squares.count == 0 {
+                guard let frame = self.capturedFrame else { return }
+                let pixelBuffer = frame.capturedImage;
+                print("Finding scrabble board in image")
+                try sequenceRequestHandler?.perform([self.findBoardRequest], on: pixelBuffer)
+            } else  {
+                
+                let rect = self.squares.last
+                
+                if (self.tiles[rect!] == nil) {
+                    print("Finding squares in scrabble board")
+                    try sequenceRequestHandler?.perform([self.findSquaresRequest(subRect: rect!)], on: self.previewImage!)
+                } else {
+                    print("Tracking squares in scrabble board")
+                    let subRect = self.tiles[rect!]
+                    try sequenceRequestHandler?.perform([self.trackSquareRequest(rect: subRect!)], on: self.previewImage!)
+                }
+            }
         } catch {
             print(error)
         }
@@ -473,40 +537,54 @@ class ViewController: UIViewController, ARSCNViewDelegate, ARSessionDelegate {
         return request
     }
     
-    lazy var overlay: OverlayScene? = {
-        return self.sceneView.overlaySKScene as? OverlayScene
-    }()
+    func trackSquareRequest(rect: VNRectangleObservation) -> VNTrackRectangleRequest {
+        let request = VNTrackRectangleRequest(rectangleObservation: rect, completionHandler: self.handleTrackSquare)
+        request.regionOfInterest = rect.boundingBox
+        return request
+    }
+    
+//    lazy var overlay: OverlayScene? = {
+//        return self.sceneView.overlaySKScene as? OverlayScene
+//    }()
     
     private func handleFindSquares(request: VNRequest, error: Error?) {
-        
-        guard let imageRequest = request as? VNImageBasedRequest else {
-            fatalError("request is not an image request")
+    
+        guard let observations = request.results as? [VNRectangleObservation]
+            else { return }
+
+        for (i, rect) in observations.enumerated() {
+            
+            print("Detected and tracking square \(i): \(rect.boundingBox)")
+            
+            do {
+                try sequenceRequestHandler?.perform([self.trackSquareRequest(rect: rect)], on: self.previewImage!)
+            } catch {
+                print(error)
+            }
         }
+
+    }
+    
+    
+    private func handleTrackSquare(request: VNRequest, error: Error?) {
         
         guard let observations = request.results as? [VNRectangleObservation]
-            else { fatalError("unexpected result type from VNDetectRectanglesRequest") }
-
-        print(imageRequest.regionOfInterest)
+            else { return }
         
         for (i, rect) in observations.enumerated() {
             
-            let frame = rect.boundingBox.scaled(to: self.capturedImage!.extent.size)
-           
-            print("\(i): \(frame)")
+            let square = self.squares.last
             
-            if (overlay!.parse(rect: frame)) {
-                return
+            if (square!.contains(rect.topLeft) && square!.contains(rect.bottomRight)) {
+                print("Tracked square: \(i) \(rect.boundingBox)")
+                self.tiles[square!] = rect
+            }
+            else {
+                print("Tracked square \(square!) not within rect \(rect)")
             }
             
-            
-            self.previewImage = self.capturedImage?.cropping(to: imageRequest.regionOfInterest)
-            self.previewRect = frame
-            
-            self.performSegue(withIdentifier: "ShowImage", sender: self)
-            
-            return
         }
-
+        
     }
 }
 

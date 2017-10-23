@@ -47,6 +47,10 @@
                                 </view>
                                 <blurEffect style="light"/>
                             </visualEffectView>
+                            <imageView hidden="YES" userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" fixedFrame="YES" translatesAutoresizingMaskIntoConstraints="NO" id="Rrf-sX-y8l">
+                                <rect key="frame" x="15" y="20" width="100" height="130"/>
+                                <autoresizingMask key="autoresizingMask" flexibleMaxX="YES" flexibleMaxY="YES"/>
+                            </imageView>
                         </subviews>
                         <color key="backgroundColor" white="0.0" alpha="0.0" colorSpace="custom" customColorSpace="genericGamma22GrayColorSpace"/>
                         <constraints>
@@ -60,6 +64,7 @@
                         <viewLayoutGuide key="safeArea" id="85Z-BJ-Rfc"/>
                     </view>
                     <connections>
+                        <outlet property="previewImageView" destination="Rrf-sX-y8l" id="WhW-QX-0W1"/>
                         <outlet property="sceneView" destination="ute-zD-wl0" id="Cm6-08-YCg"/>
                         <outlet property="sessionInfoLabel" destination="VgF-fr-OUp" id="Sd5-iX-4Vm"/>
                         <outlet property="sessionInfoView" destination="dTH-Ga-njc" id="gW9-Qb-tLQ"/>
